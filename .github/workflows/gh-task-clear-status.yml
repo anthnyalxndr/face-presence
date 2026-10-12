@@ -1,0 +1,21 @@
+name: gh-task clear status labels
+
+# Written by gh task init. When an issue closes, for any reason, its status labels come off, so a
+# closed issue never reads in-progress or review in a label-based view.
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove in-progress and review from the closed issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: gh issue edit "$ISSUE" -R "$REPO" --remove-label in-progress --remove-label review
