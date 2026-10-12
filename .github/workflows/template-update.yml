@@ -1,0 +1,120 @@
+name: Template update
+
+# Weekly `copier update` against the template this repo was scaffolded from (the `_src_path` in
+# .copier-answers.yml). When the template has a newer tag, the job applies it and opens a pull
+# request; merge conflicts are left as inline markers for a person to resolve.
+#
+# Needs the repository secret COPIER_TEMPLATE_TOKEN: a fine-grained personal access token with
+# Contents read on the template repository (it is private) and Contents and Pull requests write on
+# this repository, so the pull request it opens runs CI. Without the secret the job says so and
+# exits 0. Run it by hand from the Actions tab with "Run workflow".
+
+on:
+  schedule:
+    - cron: "23 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  copier-update:
+    name: copier update
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.COPIER_TEMPLATE_TOKEN }}
+    steps:
+      - name: Check for the token
+        id: token
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::COPIER_TEMPLATE_TOKEN is not set; add a fine-grained token with Contents read on the template repository and Contents and Pull requests write here"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.COPIER_TEMPLATE_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.token.outputs.present == 'true'
+
+      - name: Run copier update
+        if: steps.token.outputs.present == 'true'
+        id: update
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          src=$(sed -n 's/^_src_path: //p' .copier-answers.yml)
+          before=$(sed -n 's/^_commit: //p' .copier-answers.yml)
+          case "$src" in
+            gh:*) remote="https://github.com/${src#gh:}.git" ;;
+            *) remote="$src" ;;
+          esac
+          latest=$(git ls-remote --tags --refs "$remote" 'v[0-9]*' | sed 's#.*/##' | sort -V | tail -1)
+          if [ "$latest" = "$before" ]; then
+            echo "::notice::template $before is current"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          uvx copier update --defaults --trust --skip-answered --conflict inline
+          status=$?
+          set -e
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::notice::copier update from $before to $latest changed nothing (exit $status)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Copier 9 leaves _commit at the old version when the merge had conflicts; pin it to the
+          # version it merged so the next run does not redo the same update.
+          after=$(sed -n 's/^_commit: //p' .copier-answers.yml)
+          if [ "$after" = "$before" ]; then
+            sed -i "s/^_commit: .*/_commit: $latest/" .copier-answers.yml
+            after=$latest
+          fi
+          conflicts=$(grep -rlE '^<<<<<<< ' --exclude-dir=.git . || true)
+          {
+            echo "changed=true"
+            echo "before=$before"
+            echo "after=$after"
+            echo "conflicts<<CONFLICTS"
+            echo "$conflicts"
+            echo "CONFLICTS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.COPIER_TEMPLATE_TOKEN }}
+          BEFORE: ${{ steps.update.outputs.before }}
+          AFTER: ${{ steps.update.outputs.after }}
+          CONFLICTS: ${{ steps.update.outputs.conflicts }}
+        run: |
+          branch="chore/template-update-${AFTER}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "::notice::$branch already exists; merge or close its pull request first"
+            exit 0
+          fi
+          git switch -c "$branch"
+          git add -A
+          git commit -m "chore(template): copier update from ${BEFORE} to ${AFTER}"
+          git push -u origin "$branch"
+          {
+            echo "Scheduled \`copier update\` from ${BEFORE} to ${AFTER} of the template in \`.copier-answers.yml\`."
+            echo
+            if [ -n "$CONFLICTS" ]; then
+              echo "**Merge conflicts** are left as inline markers in these files; resolve them before merging:"
+              echo
+              printf '%s\n' "$CONFLICTS" | sed 's/^\.\///; s/^/- /'
+            else
+              echo "No conflicts. Review the diff, then merge."
+            fi
+          } > "$RUNNER_TEMP/pr-body.md"
+          gh pr create --title "chore(template): copier update to ${AFTER}" --body-file "$RUNNER_TEMP/pr-body.md"

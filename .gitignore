@@ -1,0 +1,21 @@
+# --- Secrets & local env (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_rsa
+*.p12
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# --- Claude Code local overrides ---
+.claude/settings.local.json
+
+build/

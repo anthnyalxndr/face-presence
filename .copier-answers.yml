@@ -1,0 +1,21 @@
+# Changes here will be overwritten by Copier; edit the template instead.
+# This file lets `copier update` re-apply template improvements to this repo.
+_commit: v0.3.0
+_src_path: gh:anthnyalxndr/copier-templates
+author_email: anthnyalxndr@gmail.com
+author_name: Anthony Alexander
+deploy_via_ci: false
+git_hook_strictness: standard
+github_owner: anthnyalxndr
+include_devcontainer: false
+include_docker: false
+license: MIT
+project_description: macOS CLI that samples the camera, counts faces on-device, and
+    prints presence as JSON. No images stored.
+project_name: face-presence
+project_slug: face-presence
+project_type: base
+use_dependabot: true
+use_github_actions: true
+use_local_runner: false
+

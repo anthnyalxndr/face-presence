@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: build-and-test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check
+
+  gitleaks:
+    name: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The gitleaks GitHub Action scans pull requests through the API and fails on a private
+      # repository with "Resource not accessible by integration" even when the job is granted
+      # pull-requests permissions. The CLI scans the whole git history with no API access.
+      - name: Scan git history with gitleaks
+        env:
+          GITLEAKS_VERSION: 8.24.3
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks git --redact --no-banner --exit-code 1 .
+

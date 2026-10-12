@@ -1,0 +1,8 @@
+---
+description: Project conventions — single source of truth
+alwaysApply: true
+---
+
+Follow the conventions in [AGENTS.md](../../AGENTS.md). It is the single source of
+truth for this repo's tech stack, commands, SDLC working agreements, and workflow loop.
+Do not duplicate rules here — update AGENTS.md instead.
