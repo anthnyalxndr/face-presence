@@ -1,0 +1,44 @@
+name: Bug
+description: Something is broken.
+title: '<what is wrong, in one line>'
+labels: ['bug', 'priority:medium']
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What you were doing and what went wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Leave the first line; add more if the fix has other observable outcomes.
+      value: |
+        - [ ] A regression test reproduces the bug and passes after the fix
+    validations:
+      required: true
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Pointers
+      description: Where you think the bug lives, if you know.
