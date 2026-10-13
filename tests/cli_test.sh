@@ -15,6 +15,9 @@ expect64 --interval 0
 expect64 --interval abc
 expect64 --timeout abc
 expect64 --help
+expect64 --dark-threshold
+expect64 --dark-threshold 2
+expect64 --dark-threshold abc
 
 usage_text=$("$BIN" --help 2>&1 >/dev/null || true)
 case "$usage_text" in *"usage: face-presence"*) ;; *) fail "usage text missing" ;; esac
@@ -26,9 +29,13 @@ if [ "${FACE_PRESENCE_CAMERA_TEST:-}" = "1" ]; then
   echo "$line" | python3 -I -c '
 import json, sys
 d = json.loads(sys.stdin.read())
-assert set(d) == {"timestamp", "present", "faces"}, d
-assert isinstance(d["present"], bool) and isinstance(d["faces"], int), d
-assert d["present"] == (d["faces"] > 0), d
+assert set(d) == {"timestamp", "present", "faces", "luminance", "dark"}, d
+assert isinstance(d["faces"], int) and isinstance(d["dark"], bool), d
+assert 0 <= d["luminance"] <= 1, d
+if d["dark"]:
+    assert d["present"] is None, d
+else:
+    assert isinstance(d["present"], bool) and d["present"] == (d["faces"] > 0), d
 print("camera sample ok:", d)
 ' || fail "camera sample malformed"
 fi
