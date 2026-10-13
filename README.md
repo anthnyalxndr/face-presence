@@ -10,7 +10,7 @@ indicator light is on for well under a second per sample.
 
 ```
 $ face-presence --once
-{"timestamp":"2026-10-12T21:39:29Z","present":true,"faces":1}
+{"timestamp":"2026-10-12T21:39:29Z","present":true,"faces":1,"luminance":0.412,"dark":false}
 ```
 
 Built for presence detection in time trackers (the input-based idle detectors miss
@@ -33,12 +33,20 @@ permission by running it once in a terminal first.
 ## Usage
 
 ```
-face-presence [--once] [--interval SECONDS] [--timeout SECONDS]
+face-presence [--once] [--interval SECONDS] [--timeout SECONDS] [--dark-threshold 0..1]
 
   --once       take one sample, print it, exit
   --interval   seconds between samples in loop mode (default 60)
   --timeout    seconds to wait for a usable frame (default 4)
+  --dark-threshold  mean luminance (0 to 1) below which a sample is unknown (default 0.08)
 ```
+
+`luminance` is the frame's mean brightness. Face detection fails in low light, and a
+dark room must not read as an empty room, so below the threshold a sample reports
+`present: null` and `dark: true`: no evidence either way. Consumers should treat that as
+unknown and fall back to another signal, such as keyboard activity. If a consumer merges
+identical consecutive samples, keep `luminance` out of the merge key; it changes every
+frame, while `dark` only flips when the light does.
 
 Loop mode prints one line per sample to stdout and never buffers, so it pipes
 cleanly into whatever consumes it:
