@@ -74,38 +74,69 @@ func log(_ s: String) {
 
 // MARK: - One-frame capture
 
+// One grabber, and so one capture session, serves every sample for the life of
+// the process; the session is started and stopped around each sample. Once a
+// session has run, AVFoundation keeps it alive even after it stops, loses its
+// input and output, and is released. With a session per sample, every earlier
+// input stayed registered as an observer of the camera device, so each start
+// notified all of them on the main thread and left garbage that is never
+// drained: memory and CPU grew with the square of the sample count (74 GB
+// after 12 days at one sample a minute).
 final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "face-presence.capture")
+    // input is touched only on the main thread.
+    private var input: AVCaptureDeviceInput?
+    // frames, generation and done are touched only on `queue`.
     private var frames = 0
+    private var generation = 0
     private var done: ((CVPixelBuffer?) -> Void)?
     // Skip the first few frames so auto-exposure has settled.
     private let warmupFrames = 6
 
-    func grab(timeout: Double, completion: @escaping (CVPixelBuffer?) -> Void) {
+    // Binds the session to the current default camera. It runs again only if
+    // that camera disconnects, so an unplugged and replugged webcam recovers on
+    // the next sample.
+    private func configure() -> Bool {
+        if let input = input, input.device.isConnected { return true }
         guard let device = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: device) else {
-            completion(nil); return
-        }
+              let newInput = try? AVCaptureDeviceInput(device: device) else { return false }
         session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        if let old = input { session.removeInput(old); input = nil }
         session.sessionPreset = .vga640x480
-        if session.canAddInput(input) { session.addInput(input) }
-        let output = AVCaptureVideoDataOutput()
-        output.alwaysDiscardsLateVideoFrames = true
-        output.setSampleBufferDelegate(self, queue: queue)
-        if session.canAddOutput(output) { session.addOutput(output) }
-        session.commitConfiguration()
+        guard session.canAddInput(newInput) else { return false }
+        session.addInput(newInput)
+        input = newInput
+        if session.outputs.isEmpty {
+            let output = AVCaptureVideoDataOutput()
+            output.alwaysDiscardsLateVideoFrames = true
+            output.setSampleBufferDelegate(self, queue: queue)
+            if session.canAddOutput(output) { session.addOutput(output) }
+        }
+        return true
+    }
 
-        frames = 0
-        var finished = false
-        done = { [weak self] buf in
-            guard !finished else { return }
-            finished = true
-            self?.session.stopRunning()
-            completion(buf)
+    func grab(timeout: Double, completion: @escaping (CVPixelBuffer?) -> Void) {
+        guard configure() else { completion(nil); return }
+        let current: Int = queue.sync {
+            frames = 0
+            generation += 1
+            var finished = false
+            done = { [weak self] buf in
+                guard !finished else { return }
+                finished = true
+                self?.session.stopRunning()
+                completion(buf)
+            }
+            return generation
         }
         session.startRunning()
-        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.done?(nil) }
+        // A timeout left over from an earlier sample must not end this one.
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            guard let self = self, self.generation == current else { return }
+            self.done?(nil)
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
@@ -186,8 +217,9 @@ guard AVCaptureDevice.default(for: .video) != nil else {
     exit(3)
 }
 
+let grabber = FrameGrabber()
+
 func sample() {
-    let grabber = FrameGrabber()
     let sem = DispatchSemaphore(value: 0)
     grabber.grab(timeout: options.timeout) { buf in
         if let buf = buf, let faces = countFaces(in: buf) {

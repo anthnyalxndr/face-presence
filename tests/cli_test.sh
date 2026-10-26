@@ -38,5 +38,22 @@ else:
     assert isinstance(d["present"], bool) and d["present"] == (d["faces"] > 0), d
 print("camera sample ok:", d)
 ' || fail "camera sample malformed"
+
+  # Loop mode must reuse one capture session. AVFoundation never frees a
+  # session that has run, and each leaked one makes every later sample slower
+  # and larger. Count live sessions with heap(1) after several fast samples.
+  out=$(mktemp)
+  "$BIN" --interval 0.5 >"$out" 2>/dev/null &
+  pid=$!
+  sleep 15
+  sessions=$(heap "$pid" 2>/dev/null | awk '$4 ~ /^(NSKVONotifying_)?AVCaptureSession(_Tundra)?$/ {n += $1} END {print n + 0}')
+  kill "$pid"
+  samples=$(wc -l <"$out" | tr -d ' ')
+  rm -f "$out"
+  [ "$samples" -ge 5 ] || fail "loop mode printed $samples samples in 15s, want at least 5"
+  # Zero means heap(1) could not read the process, not that nothing leaked.
+  [ "$sessions" -ge 1 ] || fail "found no capture sessions; heap(1) could not inspect the process"
+  [ "$sessions" -le 2 ] || fail "$sessions capture sessions alive after $samples samples, want at most 2"
+  echo "loop sample ok: $samples samples, $sessions live capture sessions"
 fi
 echo "ok: cli tests"
