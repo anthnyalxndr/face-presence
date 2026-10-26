@@ -85,7 +85,8 @@ func log(_ s: String) {
 final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "face-presence.capture")
-    private var configured = false
+    // input is touched only on the main thread.
+    private var input: AVCaptureDeviceInput?
     // frames, generation and done are touched only on `queue`.
     private var frames = 0
     private var generation = 0
@@ -93,19 +94,26 @@ final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     // Skip the first few frames so auto-exposure has settled.
     private let warmupFrames = 6
 
+    // Binds the session to the current default camera. It runs again only if
+    // that camera disconnects, so an unplugged and replugged webcam recovers on
+    // the next sample.
     private func configure() -> Bool {
-        if configured { return true }
+        if let input = input, input.device.isConnected { return true }
         guard let device = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: device) else { return false }
+              let newInput = try? AVCaptureDeviceInput(device: device) else { return false }
         session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        if let old = input { session.removeInput(old); input = nil }
         session.sessionPreset = .vga640x480
-        if session.canAddInput(input) { session.addInput(input) }
-        let output = AVCaptureVideoDataOutput()
-        output.alwaysDiscardsLateVideoFrames = true
-        output.setSampleBufferDelegate(self, queue: queue)
-        if session.canAddOutput(output) { session.addOutput(output) }
-        session.commitConfiguration()
-        configured = true
+        guard session.canAddInput(newInput) else { return false }
+        session.addInput(newInput)
+        input = newInput
+        if session.outputs.isEmpty {
+            let output = AVCaptureVideoDataOutput()
+            output.alwaysDiscardsLateVideoFrames = true
+            output.setSampleBufferDelegate(self, queue: queue)
+            if session.canAddOutput(output) { session.addOutput(output) }
+        }
         return true
     }
 

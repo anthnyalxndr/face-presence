@@ -51,6 +51,8 @@ print("camera sample ok:", d)
   samples=$(wc -l <"$out" | tr -d ' ')
   rm -f "$out"
   [ "$samples" -ge 5 ] || fail "loop mode printed $samples samples in 15s, want at least 5"
+  # Zero means heap(1) could not read the process, not that nothing leaked.
+  [ "$sessions" -ge 1 ] || fail "found no capture sessions; heap(1) could not inspect the process"
   [ "$sessions" -le 2 ] || fail "$sessions capture sessions alive after $samples samples, want at most 2"
   echo "loop sample ok: $samples samples, $sessions live capture sessions"
 fi
