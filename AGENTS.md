@@ -14,7 +14,7 @@
 ## Commands
 
 - `make build` — compile `Sources/face-presence.swift` to `build/face-presence` with the embedded Info.plist and an ad-hoc signature.
-- `make check` — typecheck plus `tests/cli_test.sh` (argument handling; no camera). `FACE_PRESENCE_CAMERA_TEST=1 make check` adds one real sample. Run before every commit.
+- `make check` — typecheck plus `tests/cli_test.sh` (argument handling; no camera). `FACE_PRESENCE_CAMERA_TEST=1 make check` adds one real sample and a 15-second loop that checks only one capture session stays alive. Run before every commit.
 - `make install [PREFIX=...]` — copy the binary to `$PREFIX/bin` (default `~/.local`).
 - Single source file on purpose; keep it that way until there is a second concern.
 
@@ -96,5 +96,8 @@ These persist across sessions and apply to how you work in this repo._
 
 _Append durable, non-obvious facts about this codebase (architecture, gotchas,
 env quirks) as you discover them. Verify a fact still holds before relying on it._
+
+- AVFoundation never frees an `AVCaptureSession` that has run, even after `stopRunning()`, removing its input and output, and draining an autorelease pool. Create one session per process and start and stop it per sample. A session per sample grew to 74 GB in 12 days (verified 2026-10-26 on macOS 15).
+- The camera grant follows the binary's code signature, so each rebuilt binary may raise a new Camera prompt the first time it runs.
 
 <!-- e.g. - The build fails if DB is unreachable because … -->
